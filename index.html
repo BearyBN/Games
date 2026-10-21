@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Змейка на автопилоте</title>
+<style>
+  :root {
+    --bg: #0a0f1f;
+    --panel: rgba(255, 255, 255, 0.05);
+    --border: rgba(255, 255, 255, 0.09);
+    --text: #e8eeff;
+    --muted: #8b97c4;
+    --accent: #5cf2a6;
+    --accent2: #4cc9f0;
+    --food: #ff5c8a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 800px at 50% -10%, #1b2550 0%, var(--bg) 60%);
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 16px;
+    min-height: 100vh;
+    user-select: none;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hud { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 8px 16px;
+    min-width: 96px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+  }
+  .stat .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .stat .value {
+    font-size: 24px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    display: inline-block;
+  }
+  .board-wrap {
+    position: relative;
+    width: min(92vw, calc(100vh - 250px), 640px);
+    min-width: 260px;
+    aspect-ratio: 1 / 1;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 6px rgba(92, 242, 166, 0.04);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    border-radius: 18px;
+    background: rgba(8, 12, 26, 0.45);
+  }
+  .overlay.show { opacity: 1; }
+  .ov-card { text-align: center; padding: 20px 28px; }
+  .ov-title { font-size: 30px; font-weight: 800; }
+  .ov-sub { margin-top: 6px; color: var(--muted); font-size: 15px; }
+  .bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .mode {
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    min-width: 170px;
+    text-align: center;
+  }
+  .mode b { color: var(--accent); font-weight: 600; }
+  button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); }
+  .speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  input[type=range] { accent-color: var(--accent); width: 120px; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; }
+  kbd {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.06);
+  }
+</style>
+</head>
+<body>
+  <h1>Змейка на автопилоте</h1>
+
+  <div class="hud">
+    <div class="stat"><div class="label">Счёт</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">Длина</div><div class="value" id="length">3</div></div>
+    <div class="stat"><div class="label">Рекорд</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">Поле</div><div class="value" id="fill">0%</div></div>
+  </div>
+
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="ov-card">
+        <div class="ov-title" id="ovTitle"></div>
+        <div class="ov-sub" id="ovSub"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="mode" id="mode">Режим: <b>Охота</b></div>
+    <button id="pauseBtn">Пауза</button>
+    <button id="restartBtn">Заново</button>
+    <button id="pathBtn">Путь: вкл</button>
+    <label class="speed">Скорость
+      <input type="range" id="speed" min="1" max="10" value="5">
+      <span id="speedVal">5</span>
+    </label>
+  </div>
+  <div class="hint"><kbd>Пробел</kbd> пауза · <kbd>R</kbd> заново · <kbd>+</kbd>/<kbd>-</kbd> скорость · <kbd>P</kbd> показать путь</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Настройки ----------
+  const N = 20;                                                  // размер поля в клетках
+  const SPEEDS = [160, 120, 90, 70, 55, 42, 32, 24, 16, 10];    // мс на один шаг
+  const DIRS = [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 0, y: -1 }];
+  const BEST_KEY = 'snake-autopilot-best';
+
+  const $ = id => document.getElementById(id);
+  const canvas = $('board');
+  const ctx = canvas.getContext('2d');
+  const bgCanvas = document.createElement('canvas');
+  const bgCtx = bgCanvas.getContext('2d');
+  const ui = {
+    score: $('score'), length: $('length'), best: $('best'), fill: $('fill'),
+    overlay: $('overlay'), ovTitle: $('ovTitle'), ovSub: $('ovSub'),
+    mode: $('mode'), pause: $('pauseBtn'), restart: $('restartBtn'), path: $('pathBtn'),
+    speed: $('speed'), speedVal: $('speedVal'),
+  };
+
+  // ---------- Состояние ----------
+  let size = 0, cell = 0, dpr = 1;
+  let snake, prev, dir, food, foodBorn, score, state, stateTime, plan, mode;
+  let best = loadBest();
+  let acc = 0, speedIdx = 4, paused = false, showPath = true;
+  const particles = [];
+  const popups = [];
+
+  function loadBest() {
+    try { return parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { return 0; }
+  }
+  function saveBest() {
+    try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) { /* хранилище недоступно */ }
+  }
+
+  // ---------- Размеры и фон ----------
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    if (!r.width) return;
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    size = r.width;
+    cell = size / N;
+    canvas.width = bgCanvas.width = Math.round(size * dpr);
+    canvas.height = bgCanvas.height = Math.round(size * dpr);
+    drawBackground();
+  }
+
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  function drawBackground() {
+    const g = bgCtx;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const grad = g.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, '#121c3a');
+    grad.addColorStop(1, '#0b1226');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = 'rgba(255, 255, 255, 0.028)';
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        if ((x + y) % 2) continue;
+        roundRect(g, x * cell + 1.5, y * cell + 1.5, cell - 3, cell - 3, cell * 0.22);
+        g.fill();
+      }
+    }
+    const v = g.createRadialGradient(size / 2, size / 2, size * 0.3, size / 2, size / 2, size * 0.75);
+    v.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    v.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+    g.fillStyle = v;
+    g.fillRect(0, 0, size, size);
+  }
+
+  // ---------- Игра ----------
+  function reset() {
+    buildTour();
+    const k = (Math.random() * NN) | 0;
+    snake = [0, 1, 2].map(i => {
+      const c = tourCells[(k - i + NN) % NN];
+      return { x: c % N, y: (c / N) | 0 };
+    });
+    prev = snake;
+    dir = DIRS.find(d => d.x === snake[0].x - snake[1].x && d.y === snake[0].y - snake[1].y);
+    score = 0;
+    plan = null;
+    acc = 0;
+    state = 'play';
+    particles.length = 0;
+    popups.length = 0;
+    placeFood();
+    setMode('hunt');
+    hideOverlay();
+    if (paused) showOverlay('Пауза', 'Нажмите пробел, чтобы продолжить');
+    updateHud();
+  }
+
+  function placeFood() {
+    const occ = new Uint8Array(N * N);
+    for (const p of snake) occ[p.y * N + p.x] = 1;
+    const free = [];
+    for (let i = 0; i < N * N; i++) if (!occ[i]) free.push(i);
+    if (!free.length) { food = null; return false; }
+    const k = free[(Math.random() * free.length) | 0];
+    food = { x: k % N, y: (k / N) | 0 };
+    foodBorn = performance.now();
+    return true;
+  }
+
+  function tick() {
+    const head = snake[0];
+    const next = decide() || { x: head.x + dir.x, y: head.y + dir.y };
+    dir = DIRS.find(d => d.x === next.x - head.x && d.y === next.y - head.y) || dir;
+    const eating = !!food && next.x === food.x && next.y === food.y;
+
+    let hit = next.x < 0 || next.y < 0 || next.x >= N || next.y >= N;
+    if (!hit) {
+      const lim = eating ? snake.length : snake.length - 1;   // хвост уйдёт, если не едим
+      for (let i = 0; i < lim; i++) {
+        if (snake[i].x === next.x && snake[i].y === next.y) { hit = true; break; }
+      }
+    }
+    if (hit) { finish('dead'); return; }
+
+    prev = snake;
+    snake = [next, ...snake];
+    if (!eating) snake.pop();
+
+    if (eating) {
+      score += 10;
+      burst(food.x, food.y, 18, [335, 385]);
+      popups.push({ x: food.x, y: food.y, life: 900, max: 900 });
+      if (score > best) { best = score; saveBest(); }
+      bump(ui.score);
+      bump(ui.length);
+      if (!placeFood()) finish('win');
+      updateHud();
+    }
+  }
+
+  function finish(kind) {
+    state = kind;
+    stateTime = performance.now();
+    prev = snake;
+    plan = null;
+    if (kind === 'dead') {
+      for (let i = 0; i < snake.length; i += 2) burst(snake[i].x, snake[i].y, 4, [150, 190]);
+      showOverlay('Врезалась!', `Счёт ${score}. Новая партия через пару секунд`);
+    } else {
+      for (let i = 0; i < 40; i++) burst(Math.random() * N, Math.random() * N, 3, [0, 360]);
+      showOverlay('Поле заполнено!', `Идеальная партия: ${score} очков`);
+    }
+    if (score > best) { best = score; saveBest(); }
+    updateHud();
+  }
+
+  // ---------- Автопилот ----------
+  // Перед каждой партией строим случайный замкнутый маршрут, который проходит через все клетки
+  // поля ровно по разу (обход по контуру случайного лабиринта). Змейка движется по нему вперёд
+  // и срезает путь к еде, но никогда не перескакивает через свой хвост. Поэтому она не может
+  // запереть сама себя и всегда заполняет поле целиком.
+  const NN = N * N;
+  const M = N / 2;                        // поле делится на блоки 2×2
+  const idx = (x, y) => y * N + x;
+  const NB = [[1, 0, 1, 4], [0, 1, 2, 8], [-1, 0, 4, 1], [0, -1, 8, 2]];   // dx, dy, бит, бит соседа
+  const conn = new Uint8Array(M * M);     // связи блоков в лабиринте: 1 восток, 2 юг, 4 запад, 8 север
+  const tour = new Int32Array(NN);        // номер клетки на маршруте
+  const tourCells = new Int32Array(NN);   // клетка по номеру на маршруте
+  const tryTour = new Int32Array(NN);
+  const tryCells = new Int32Array(NN);
+  const queue = new Int32Array(NN);
+  let order = DIRS.slice();
+
+  // Сколько шагов по маршруту от клетки a вперёд до клетки b.
+  const ahead = (a, b) => (tour[b] - tour[a] + NN) % NN;
+
+  // Случайное остовное дерево на сетке блоков (алгоритм Прима).
+  function randomTree() {
+    conn.fill(0);
+    const inTree = new Uint8Array(M * M);
+    const edges = [];
+    const grow = c => {
+      const cx = c % M, cy = (c / M) | 0;
+      for (const [dx, dy, bit, back] of NB) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= M || ny >= M || inTree[ny * M + nx]) continue;
+        edges.push([c, ny * M + nx, bit, back]);
+      }
+    };
+    const start = (Math.random() * M * M) | 0;
+    inTree[start] = 1;
+    grow(start);
+    while (edges.length) {
+      const k = (Math.random() * edges.length) | 0;
+      const [c, n, bit, back] = edges[k];
+      edges[k] = edges[edges.length - 1];
+      edges.pop();
+      if (inTree[n]) continue;
+      inTree[n] = 1;
+      conn[c] |= bit;
+      conn[n] |= back;
+      grow(n);
+    }
+  }
+
+  // Обходим дерево по контуру: внутри блока идём против часовой стрелки,
+  // а там, где есть связь с соседним блоком, переходим в него.
+  function traceTour(t, cells) {
+    const next = c => {
+      const x = c % N, y = (c / N) | 0;
+      const m = conn[(y >> 1) * M + (x >> 1)];
+      const sx = x & 1, sy = y & 1;
+      if (!sx && !sy) return m & 4 ? idx(x - 1, y) : idx(x, y + 1);
+      if (!sx && sy) return m & 2 ? idx(x, y + 1) : idx(x + 1, y);
+      if (sx && sy) return m & 1 ? idx(x + 1, y) : idx(x, y - 1);
+      return m & 8 ? idx(x, y - 1) : idx(x - 1, y);
+    };
+    for (let i = 0, c = 0; i < NN; i++, c = next(c)) {
+      t[c] = i;
+      cells[i] = c;
+    }
+  }
+
+  function buildTour() {
+    randomTree();
+    traceTour(tour, tourCells);
+  }
+
+  // Подходит ли маршрут t: тело лежит на нём по порядку от хвоста к голове,
+  // а еда — впереди головы, но раньше хвоста.
+  function fits(t) {
+    const tc = idx(snake[snake.length - 1].x, snake[snake.length - 1].y);
+    const rel = p => (t[idx(p.x, p.y)] - t[tc] + NN) % NN;
+    let last = 0;
+    for (let i = snake.length - 2; i >= 0; i--) {
+      const r = rel(snake[i]);
+      if (r <= last) return false;
+      last = r;
+    }
+    return rel(food) > last;
+  }
+
+  // Еда оказалась за хвостом: пробуем перестроить маршрут, меняя в лабиринте по одной связи.
+  function reshapeTour(attempts) {
+    const MM = M * M;
+    for (let a = 0; a < attempts; a++) {
+      const u = (Math.random() * MM) | 0;
+      const links = NB.filter(([, , bit]) => conn[u] & bit);
+      if (!links.length) continue;
+      const [dx, dy, bit, back] = links[(Math.random() * links.length) | 0];
+      const v = u + dy * M + dx;
+      conn[u] &= ~bit;
+      conn[v] &= ~back;
+      // Лабиринт распался на две части: находим ту, где блок u.
+      const side = new Uint8Array(MM);
+      const stack = [u];
+      side[u] = 1;
+      while (stack.length) {
+        const c = stack.pop();
+        for (const [ex, ey, eb] of NB) {
+          const n = c + ey * M + ex;
+          if (conn[c] & eb && !side[n]) { side[n] = 1; stack.push(n); }
+        }
+      }
+      // Соединяем части другой перемычкой.
+      const bridges = [];
+      for (let c = 0; c < MM; c++) {
+        if (!side[c]) continue;
+        const cx = c % M, cy = (c / M) | 0;
+        for (const nb of NB) {
+          const nx = cx + nb[0], ny = cy + nb[1];
+          if (nx < 0 || ny < 0 || nx >= M || ny >= M || side[ny * M + nx]) continue;
+          if (c === u && nb[2] === bit) continue;
+          bridges.push([c, ny * M + nx, nb[2], nb[3]]);
+        }
+      }
+      if (bridges.length) {
+        const [c, n, b1, b2] = bridges[(Math.random() * bridges.length) | 0];
+        conn[c] |= b1;
+        conn[n] |= b2;
+        traceTour(tryTour, tryCells);
+        if (fits(tryTour)) {
+          tour.set(tryTour);
+          tourCells.set(tryCells);
+          return true;
+        }
+        conn[c] &= ~b1;
+        conn[n] &= ~b2;
+      }
+      conn[u] |= bit;
+      conn[v] |= back;
+    }
+    return false;
+  }
+
+  // Порядок обхода соседей: сначала текущее направление (меньше лишних поворотов), остальные случайно.
+  function shuffleOrder() {
+    order = DIRS.slice().sort(() => Math.random() - 0.5);
+    const i = order.indexOf(dir);
+    if (i > 0) { order.splice(i, 1); order.unshift(dir); }
+  }
+
+  // Кратчайший путь от головы к еде, где каждый шаг уходит дальше вперёд по маршруту,
+  // но не дальше самой еды. Все такие клетки гарантированно свободны: тело лежит позади головы.
+  function forwardPath(h, f) {
+    const limit = ahead(h, f);
+    const par = new Int32Array(NN).fill(-1);
+    const seen = new Uint8Array(NN);
+    let qh = 0, qt = 0;
+    queue[qt++] = h;
+    seen[h] = 1;
+    while (qh < qt && !seen[f]) {
+      const c = queue[qh++];
+      const rc = ahead(h, c);
+      const cx = c % N, cy = (c / N) | 0;
+      for (const d of order) {
+        const nx = cx + d.x, ny = cy + d.y;
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const n = idx(nx, ny);
+        const rn = ahead(h, n);
+        if (seen[n] || rn <= rc || rn > limit) continue;
+        seen[n] = 1;
+        par[n] = c;
+        queue[qt++] = n;
+      }
+    }
+    if (!seen[f]) return null;
+    const path = [];
+    for (let c = f; c !== h; c = par[c]) path.push({ x: c % N, y: (c / N) | 0 });
+    return path.reverse();
+  }
+
+  const RESHAPE = 60;      // сколько вариантов маршрута пробовать за один шаг
+  const CUT_LIMIT = 0.6;   // после такой заполненности поля больше не срезаем
+
+  function decide() {
+    shuffleOrder();
+    const head = snake[0], tail = snake[snake.length - 1];
+    const h = idx(head.x, head.y);
+
+    if (food) {
+      const f = idx(food.x, food.y);
+      if (ahead(h, f) < ahead(h, idx(tail.x, tail.y)) || reshapeTour(RESHAPE)) {
+        // 1. Еда между головой и хвостом: срезаем к ней кратчайшим безопасным путём.
+        if (snake.length < NN * CUT_LIMIT) {
+          const path = forwardPath(h, f);
+          if (path) return go('hunt', path);
+        }
+        // 2. Поле почти заполнено: срезы оставляют дыры, поэтому идём к еде строго по маршруту.
+        const path = [];
+        for (let k = 1, n = ahead(h, f); k <= n; k++) {
+          const c = tourCells[(tour[h] + k) % NN];
+          path.push({ x: c % N, y: (c / N) | 0 });
+        }
+        return go('sweep', path);
+      }
+    }
+
+    // 3. Еда пока за хвостом: идём по маршруту шаг за шагом, пока хвост не откроет к ней путь.
+    const n = tourCells[(tour[h] + 1) % NN];
+    return go('tour', [{ x: n % N, y: (n / N) | 0 }]);
+  }
+
+  function go(m, path) {
+    setMode(m);
+    plan = m === 'tour' ? null : path.slice(1);
+    return path[0];
+  }
+
+  const MODE_NAMES = { hunt: 'Охота за едой', sweep: 'Аккуратно заполняю поле', tour: 'Жду, пока хвост откроет путь' };
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m;
+    ui.mode.innerHTML = `Режим: <b>${MODE_NAMES[m]}</b>`;
+  }
+
+  // ---------- Эффекты ----------
+  function burst(gx, gy, count, hueRange) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 0.004 + Math.random() * 0.01;
+      particles.push({
+        x: gx + 0.5, y: gy + 0.5,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 500 + Math.random() * 500, max: 1000,
+        hue: hueRange[0] + Math.random() * (hueRange[1] - hueRange[0]),
+        r: 0.06 + Math.random() * 0.08,
+      });
+    }
+  }
+
+  function bump(el) {
+    if (el.animate) {
+      el.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 280, easing: 'ease-out' });
+    }
+  }
+
+  // ---------- Отрисовка ----------
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const px = v => (v + 0.5) * cell;
+
+  function render(now, t, dt) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(bgCanvas, 0, 0, size, size);
+    if (showPath && plan && state === 'play') drawPlan();
+    drawFood(now);
+    drawSnake(t, now);
+    drawParticles(dt);
+    drawPopups(dt);
+  }
+
+  function drawPlan() {
+    ctx.fillStyle = 'rgba(92, 242, 166, 0.22)';
+    for (let i = 0; i < plan.length; i++) {
+      ctx.beginPath();
+      ctx.arc(px(plan[i].x), px(plan[i].y), cell * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function easeOutBack(x) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  }
+
+  function drawFood(now) {
+    if (!food) return;
+    const age = (now - foodBorn) / 400;
+    const s = age < 1 ? Math.max(0, easeOutBack(age)) : 1;
+    const pulse = 1 + Math.sin(now / 220) * 0.06;
+    const x = px(food.x), y = px(food.y);
+    const r = cell * 0.33 * s * pulse;
+    if (r <= 0) return;
+
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.8);
+    glow.addColorStop(0, 'rgba(255, 92, 138, 0.45)');
+    glow.addColorStop(1, 'rgba(255, 92, 138, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    const body = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+    body.addColorStop(0, '#ffc2d4');
+    body.addColorStop(0.45, '#ff4f7f');
+    body.addColorStop(1, '#c0174a');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(x, y + r * 0.05, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#7a4a2a';
+    ctx.lineWidth = Math.max(1, cell * 0.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y - r * 0.8);
+    ctx.lineTo(x + r * 0.12, y - r * 1.25);
+    ctx.stroke();
+
+    ctx.fillStyle = '#5cf2a6';
+    ctx.beginPath();
+    ctx.ellipse(x + r * 0.45, y - r * 1.1, r * 0.38, r * 0.17, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSnake(t, now) {
+    const L = snake.length;
+    // Точки ломаной (в клетках): голова плавно едет, тело стоит в центрах клеток, хвост подтягивается.
+    const pts = [{ x: lerp(prev[0].x, snake[0].x, t), y: lerp(prev[0].y, snake[0].y, t) }];
+    for (let i = 1; i < L; i++) pts.push(snake[i]);
+    const oldTail = prev[L - 1] || snake[L - 1];
+    pts.push({ x: lerp(oldTail.x, snake[L - 1].x, t), y: lerp(oldTail.y, snake[L - 1].y, t) });
+
+    const dead = state === 'dead';
+    const fade = dead ? Math.max(0.25, 1 - (now - stateTime) / 1200) : 1;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Свечение под телом
+    ctx.save();
+    ctx.shadowColor = dead ? 'rgba(255, 92, 138, 0.5)' : 'rgba(92, 242, 166, 0.5)';
+    ctx.shadowBlur = cell * 0.9;
+    ctx.strokeStyle = dead ? '#5a2a3a' : '#1a5e4c';
+    ctx.lineWidth = cell * 0.72;
+    tracePath(pts);
+    ctx.stroke();
+    ctx.restore();
+
+    // Тело с градиентом от головы к хвосту и сужением
+    for (let i = pts.length - 2; i >= 0; i--) {
+      const f = i / Math.max(1, pts.length - 2);
+      const hue = dead ? 340 : lerp(152, 200, f);
+      const sat = dead ? 25 : 80;
+      ctx.strokeStyle = `hsl(${hue}, ${sat}%, ${lerp(62, 44, f)}%)`;
+      ctx.lineWidth = cell * lerp(0.8, 0.46, f);
+      ctx.beginPath();
+      ctx.moveTo(px(pts[i].x), px(pts[i].y));
+      ctx.lineTo(px(pts[i + 1].x), px(pts[i + 1].y));
+      ctx.stroke();
+    }
+
+    // Блик вдоль спины
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.lineWidth = cell * 0.16;
+    tracePath(pts.slice(0, Math.max(2, Math.ceil(pts.length * 0.7))));
+    ctx.stroke();
+
+    // Чешуйки
+    ctx.fillStyle = 'rgba(0, 40, 30, 0.22)';
+    for (let i = 1; i < L; i++) {
+      ctx.beginPath();
+      ctx.arc(px(pts[i].x), px(pts[i].y), cell * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawHead(pts[0], now, dead);
+    ctx.restore();
+  }
+
+  function tracePath(pts) {
+    ctx.beginPath();
+    ctx.moveTo(px(pts[0].x), px(pts[0].y));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(px(pts[i].x), px(pts[i].y));
+  }
+
+  function drawHead(h, now, dead) {
+    const x = px(h.x), y = px(h.y);
+    const r = cell * 0.46;
+    const fx = dir.x, fy = dir.y;      // вперёд
+    const sx = -fy, sy = fx;           // вбок
+
+    // Язык
+    if (!dead && now % 1600 < 220) {
+      const len = cell * 0.32 * Math.sin(((now % 1600) / 220) * Math.PI);
+      const bx = x + fx * r * 0.9, by = y + fy * r * 0.9;
+      const tx = bx + fx * len, ty = by + fy * len;
+      ctx.strokeStyle = '#ff5c8a';
+      ctx.lineWidth = Math.max(1, cell * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(tx + (fx + sx) * cell * 0.08, ty + (fy + sy) * cell * 0.08);
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx + (fx - sx) * cell * 0.08, ty + (fy - sy) * cell * 0.08);
+      ctx.stroke();
+    }
+
+    const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+    g.addColorStop(0, dead ? '#b9a5ab' : '#b8ffd9');
+    g.addColorStop(1, dead ? '#6e5560' : '#38d98a');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Глаза; зрачки смотрят на еду
+    let lx = 0, ly = 0;
+    if (food) {
+      const dx = food.x - h.x, dy = food.y - h.y;
+      const d = Math.hypot(dx, dy) || 1;
+      lx = dx / d; ly = dy / d;
+    }
+    const blink = !dead && now % 3700 < 130;
+    for (const side of [-1, 1]) {
+      const ex = x + fx * r * 0.28 + sx * side * r * 0.45;
+      const ey = y + fy * r * 0.28 + sy * side * r * 0.45;
+      const er = r * 0.27;
+      if (dead) {
+        ctx.strokeStyle = '#2a1520';
+        ctx.lineWidth = Math.max(1, cell * 0.06);
+        ctx.beginPath();
+        ctx.moveTo(ex - er * 0.7, ey - er * 0.7); ctx.lineTo(ex + er * 0.7, ey + er * 0.7);
+        ctx.moveTo(ex + er * 0.7, ey - er * 0.7); ctx.lineTo(ex - er * 0.7, ey + er * 0.7);
+        ctx.stroke();
+      } else if (blink) {
+        ctx.strokeStyle = '#0b2a1d';
+        ctx.lineWidth = Math.max(1, cell * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(ex - sx * er, ey - sy * er);
+        ctx.lineTo(ex + sx * er, ey + sy * er);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(ex, ey, er, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0b1a2a';
+        ctx.beginPath();
+        ctx.arc(ex + lx * er * 0.4, ey + ly * er * 0.4, er * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.beginPath();
+        ctx.arc(ex + lx * er * 0.4 - er * 0.18, ey + ly * er * 0.4 - er * 0.18, er * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      ctx.globalAlpha = Math.min(1, p.life / 500);
+      ctx.fillStyle = `hsl(${p.hue}, 95%, 65%)`;
+      ctx.beginPath();
+      ctx.arc(p.x * cell, p.y * cell, p.r * cell, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPopups(dt) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.round(cell * 0.6)}px system-ui, sans-serif`;
+    for (let i = popups.length - 1; i >= 0; i--) {
+      const p = popups[i];
+      p.life -= dt;
+      if (p.life <= 0) { popups.splice(i, 1); continue; }
+      const k = 1 - p.life / p.max;
+      ctx.globalAlpha = 1 - k;
+      ctx.fillStyle = '#ffe08a';
+      ctx.fillText('+10', px(p.x), px(p.y) - k * cell * 1.4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Интерфейс ----------
+  function updateHud() {
+    ui.score.textContent = score;
+    ui.length.textContent = snake.length;
+    ui.best.textContent = best;
+    ui.fill.textContent = Math.round((snake.length / (N * N)) * 100) + '%';
+  }
+
+  function showOverlay(title, sub) {
+    ui.ovTitle.textContent = title;
+    ui.ovSub.textContent = sub;
+    ui.overlay.classList.add('show');
+  }
+  function hideOverlay() { ui.overlay.classList.remove('show'); }
+
+  function togglePause() {
+    if (state !== 'play') return;
+    paused = !paused;
+    ui.pause.textContent = paused ? 'Продолжить' : 'Пауза';
+    if (paused) showOverlay('Пауза', 'Нажмите пробел, чтобы продолжить');
+    else hideOverlay();
+  }
+
+  function setSpeed(v) {
+    speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, v));
+    ui.speed.value = speedIdx + 1;
+    ui.speedVal.textContent = speedIdx + 1;
+  }
+
+  function togglePath() {
+    showPath = !showPath;
+    ui.path.textContent = showPath ? 'Путь: вкл' : 'Путь: выкл';
+  }
+
+  ui.pause.addEventListener('click', togglePause);
+  ui.restart.addEventListener('click', () => { paused = false; ui.pause.textContent = 'Пауза'; reset(); });
+  ui.path.addEventListener('click', togglePath);
+  ui.speed.addEventListener('input', () => setSpeed(ui.speed.value - 1));
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+    else if (e.code === 'KeyR') { paused = false; ui.pause.textContent = 'Пауза'; reset(); }
+    else if (e.code === 'KeyP') togglePath();
+    else if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') setSpeed(speedIdx + 1);
+    else if (e.key === '-' || e.code === 'NumpadSubtract') setSpeed(speedIdx - 1);
+  });
+
+  // ---------- Главный цикл ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(now - last, 250);
+    last = now;
+    if (state === 'play' && !paused) {
+      acc += dt;
+      const step = SPEEDS[speedIdx];
+      while (acc >= step && state === 'play') { acc -= step; tick(); }
+    } else if (state !== 'play' && now - stateTime > (state === 'win' ? 4500 : 2600)) {
+      reset();
+    }
+    const t = state === 'play' ? Math.min(acc / SPEEDS[speedIdx], 1) : 1;
+    if (size) render(now, t, dt);
+    requestAnimationFrame(frame);
+  }
+
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+  setSpeed(speedIdx);
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
