@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Змейка на автопилоте</title>
 <style>
   :root {
@@ -14,6 +14,7 @@
     --accent: #5cf2a6;
     --accent2: #4cc9f0;
     --food: #ff5c8a;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -27,8 +28,10 @@
     align-items: center;
     justify-content: center;
     gap: 14px;
-    padding: 16px;
-    min-height: 100vh;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    min-height: 100%;
     user-select: none;
   }
   h1 {
@@ -125,6 +128,15 @@
   .speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
   input[type=range] { accent-color: var(--accent); width: 120px; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
+  .noscript {
+    max-width: 420px;
+    text-align: center;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 18px;
+  }
   kbd {
     font-family: inherit;
     font-size: 11px;
@@ -137,6 +149,7 @@
 </head>
 <body>
   <h1>Змейка на автопилоте</h1>
+  <noscript><div class="noscript">Змейку рисует JavaScript, а здесь он выключен. Откройте файл в обычном браузере (Chrome, Safari, Firefox).</div></noscript>
 
   <div class="hud">
     <div class="stat"><div class="label">Счёт</div><div class="value" id="score">0</div></div>
@@ -869,6 +882,7 @@
       reset();
     }
     const t = state === 'play' ? Math.min(acc / SPEEDS[speedIdx], 1) : 1;
+    if (!size) resize();
     if (size) render(now, t, dt);
     requestAnimationFrame(frame);
   }
